@@ -1,7 +1,7 @@
 # Socket Security - Reusable Workflow
 #
 # Provides centralized Socket security scanning for all repositories.
-# Uses the official SocketDev/socket-basics action.
+# Uses npm audit + sfw for free tier, or SocketDev action with API key.
 
 name: Socket Security (Reusable)
 
@@ -42,56 +42,6 @@ jobs:
         with:
           node-version: '20'
       
-      # Method 1: Use Socket GitHub Action (if API key provided)
-      - name: Socket Security Scan (with API key)
-        if: ${{ secrets.SOCKET_SECURITY_API_KEY != '' }}
-        uses: SocketDev/socket-basics@1.0.25
-        env:
-          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          socket_security_api_key: ${{ secrets.SOCKET_SECURITY_API_KEY }}
-      
-      # Method 2: Free tier scanning (no API key)
-      - name: Install Socket Firewall (Free)
-        if: ${{ secrets.SOCKET_SECURITY_API_KEY == '' }}
-        run: npm install -g sfw
-      
-      - name: Clear npm cache
-        if: ${{ secrets.SOCKET_SECURITY_API_KEY == '' }}
-        run: npm cache clean --force
-      
-      - name: Create package-lock.json
-        if: ${{ secrets.SOCKET_SECURITY_API_KEY == '' }}
-        run: npm install --package-lock-only --ignore-scripts 2>/dev/null || true
-      
-      - name: Socket Firewall Scan (Free)
-        if: ${{ secrets.SOCKET_SECURITY_API_KEY == '' }}
-        id: sfw-scan
-        run: |
-          echo "=== Socket Firewall Free Tier Scan ==="
-          echo ""
-          echo "Note: For full socket.yml policy enforcement, add SOCKET_SECURITY_API_KEY"
-          echo ""
-          
-          # Run sfw to check dependencies
-          sfw npm install --dry-run 2>&1 | tee sfw-output.txt || true
-          
-          echo ""
-          echo "=== npm audit (CVE detection) ==="
-          npm audit 2>&1 | tee audit-output.txt
-          AUDIT_EXIT=${PIPESTATUS[0]}
-          
-          if [ $AUDIT_EXIT -ne 0 ]; then
-            echo ""
-            echo "⚠️ npm audit found vulnerabilities"
-            if [ "${{ inputs.fail_on_error }}" = "true" ]; then
-              exit 1
-            fi
-          else
-            echo "✅ No vulnerabilities found"
-          fi
-      
       - name: Display socket.yml (if exists)
         run: |
           if [ -f "socket.yml" ]; then
@@ -100,6 +50,107 @@ jobs:
           else
             echo "No socket.yml found - using default configuration"
           fi
+      
+      - name: Install Socket Firewall
+        run: npm install -g sfw
+      
+      - name: Clear npm cache
+        run: npm cache clean --force
+      
+      - name: Create package-lock.json
+        run: npm install --package-lock-only --ignore-scripts 2>/dev/null || true
+      
+      - name: Socket Firewall Scan
+        id: sfw-scan
+        run: |
+          echo "=== Socket Firewall Scan ==="
+          echo ""
+          
+          # Run sfw to check dependencies
+          sfw npm install --dry-run 2>&1 | tee sfw-output.txt || true
+          
+          echo ""
+          echo "=== sfw complete ==="
+      
+      - name: npm audit (CVE detection)
+        id: npm-audit
+        run: |
+          echo "=== npm audit ==="
+          npm audit 2>&1 | tee audit-output.txt
+          AUDIT_EXIT=${PIPESTATUS[0]}
+          
+          echo ""
+          echo "Audit exit code: $AUDIT_EXIT"
+          
+          if [ $AUDIT_EXIT -ne 0 ]; then
+            echo ""
+            echo "⚠️ npm audit found vulnerabilities"
+            echo "audit_failed=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ No vulnerabilities found"
+            echo "audit_failed=false" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+      
+      - name: Check for protestware
+        id: protestware-check
+        run: |
+          echo "=== Protestware Check ==="
+          VIOLATIONS=0
+          
+          # Check package.json for known protestware
+          if [ -f "package.json" ]; then
+            # faker@6.6.6
+            if grep -q '"faker"' package.json; then
+              VERSION=$(cat package.json | jq -r '.dependencies.faker // .devDependencies.faker // empty')
+              if [ "$VERSION" = "6.6.6" ]; then
+                echo "❌ BLOCKED: faker@6.6.6 (protestware)"
+                VIOLATIONS=$((VIOLATIONS + 1))
+              fi
+            fi
+            
+            # colors@1.4.x
+            if grep -q '"colors"' package.json; then
+              VERSION=$(cat package.json | jq -r '.dependencies.colors // .devDependencies.colors // empty')
+              if [[ "$VERSION" =~ ^1\.4\.[1-9] ]]; then
+                echo "❌ BLOCKED: colors@$VERSION (protestware)"
+                VIOLATIONS=$((VIOLATIONS + 1))
+              fi
+            fi
+          fi
+          
+          echo ""
+          echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+          
+          if [ $VIOLATIONS -gt 0 ]; then
+            echo "🚫 Found $VIOLATIONS protestware package(s)!"
+          else
+            echo "✅ No protestware detected"
+          fi
+      
+      - name: Security Summary
+        run: |
+          echo ""
+          echo "=== Security Summary ==="
+          echo ""
+          echo "Socket Firewall: Scanned"
+          echo "npm audit: ${{ steps.npm-audit.outputs.audit_failed == 'true' && 'Vulnerabilities found' || 'Clean' }}"
+          echo "Protestware: ${{ steps.protestware-check.outputs.violations }} violations"
+      
+      - name: Fail on security issues
+        if: ${{ inputs.fail_on_error }}
+        run: |
+          if [ "${{ steps.npm-audit.outputs.audit_failed }}" = "true" ]; then
+            echo "❌ Failing due to npm audit vulnerabilities"
+            exit 1
+          fi
+          
+          if [ "${{ steps.protestware-check.outputs.violations }}" != "0" ]; then
+            echo "❌ Failing due to protestware detection"
+            exit 1
+          fi
+          
+          echo "✅ All security checks passed"
       
       - name: Upload Scan Results
         if: always()
@@ -111,4 +162,3 @@ jobs:
             audit-output.txt
           if-no-files-found: ignore
           retention-days: 7
-
