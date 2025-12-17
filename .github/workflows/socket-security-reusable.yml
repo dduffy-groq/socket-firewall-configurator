@@ -1,0 +1,114 @@
+# Socket Security - Reusable Workflow
+#
+# Provides centralized Socket security scanning for all repositories.
+# Uses the official SocketDev/socket-basics action.
+
+name: Socket Security (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      enable_comments:
+        description: 'Enable PR comments for security issues'
+        required: false
+        default: true
+        type: boolean
+      fail_on_error:
+        description: 'Fail workflow if security issues found'
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      SOCKET_SECURITY_API_KEY:
+        required: false
+        description: 'Socket API key (optional for free tier basic scanning)'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  socket-security:
+    name: Socket Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      # Method 1: Use Socket GitHub Action (if API key provided)
+      - name: Socket Security Scan (with API key)
+        if: ${{ secrets.SOCKET_SECURITY_API_KEY != '' }}
+        uses: SocketDev/socket-basics@1.0.25
+        env:
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          socket_security_api_key: ${{ secrets.SOCKET_SECURITY_API_KEY }}
+      
+      # Method 2: Free tier scanning (no API key)
+      - name: Install Socket Firewall (Free)
+        if: ${{ secrets.SOCKET_SECURITY_API_KEY == '' }}
+        run: npm install -g sfw
+      
+      - name: Clear npm cache
+        if: ${{ secrets.SOCKET_SECURITY_API_KEY == '' }}
+        run: npm cache clean --force
+      
+      - name: Create package-lock.json
+        if: ${{ secrets.SOCKET_SECURITY_API_KEY == '' }}
+        run: npm install --package-lock-only --ignore-scripts 2>/dev/null || true
+      
+      - name: Socket Firewall Scan (Free)
+        if: ${{ secrets.SOCKET_SECURITY_API_KEY == '' }}
+        id: sfw-scan
+        run: |
+          echo "=== Socket Firewall Free Tier Scan ==="
+          echo ""
+          echo "Note: For full socket.yml policy enforcement, add SOCKET_SECURITY_API_KEY"
+          echo ""
+          
+          # Run sfw to check dependencies
+          sfw npm install --dry-run 2>&1 | tee sfw-output.txt || true
+          
+          echo ""
+          echo "=== npm audit (CVE detection) ==="
+          npm audit 2>&1 | tee audit-output.txt
+          AUDIT_EXIT=${PIPESTATUS[0]}
+          
+          if [ $AUDIT_EXIT -ne 0 ]; then
+            echo ""
+            echo "⚠️ npm audit found vulnerabilities"
+            if [ "${{ inputs.fail_on_error }}" = "true" ]; then
+              exit 1
+            fi
+          else
+            echo "✅ No vulnerabilities found"
+          fi
+      
+      - name: Display socket.yml (if exists)
+        run: |
+          if [ -f "socket.yml" ]; then
+            echo "=== socket.yml ==="
+            cat socket.yml
+          else
+            echo "No socket.yml found - using default configuration"
+          fi
+      
+      - name: Upload Scan Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: socket-scan-results
+          path: |
+            sfw-output.txt
+            audit-output.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
