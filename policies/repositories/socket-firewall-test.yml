@@ -1,0 +1,81 @@
+# Socket Policy: socket-firewall-test
+#
+# Test repository with intentional protestware for validation.
+# Configured to BLOCK all known bad packages.
+
+version: 2
+enabled: true
+projectName: "socket-firewall-test"
+
+# Strict blocking for test validation
+issueRules:
+  # BLOCK - All critical issues
+  knownMalware: error
+  criticalCVE: error
+  highCVE: error
+  protestware: error
+  potentialTyposquat: error
+  
+  # BLOCK - Supply chain risks for testing
+  installScripts: error
+  obfuscatedCode: error
+  highEntropyStrings: error
+  
+  # WARN - Medium risks
+  mediumCVE: warn
+  lowCVE: warn
+  deprecated: warn
+  unmaintained: warn
+  shellAccess: warn
+  networkAccess: warn
+  
+  # IGNORE - Informational
+  trivialPackage: ignore
+  floatingDependency: ignore
+  unpopularPackage: ignore
+
+# Explicit blocks for protestware in this test repo
+deferredPackageRules:
+  # These are in package.json and SHOULD be blocked
+  - name: "colors"
+    version: ">=1.4.1"
+    action: error
+    reason: "TEST: Protestware - intentionally corrupted with infinite loop"
+  
+  - name: "faker"
+    version: ">=6.6.6"
+    action: error
+    reason: "TEST: Protestware - intentionally corrupted and unpublished"
+  
+  # Additional known bad packages to block
+  - name: "node-ipc"
+    version: ">=10.1.1 <10.1.3"
+    action: error
+    reason: "Protestware - contained anti-Russia malware"
+  
+  - name: "event-stream"
+    version: "3.3.6"
+    action: error
+    reason: "Supply chain attack - bitcoin-stealing malware"
+  
+  # Allow the safe packages
+  - name: "express"
+    version: "*"
+    action: ignore
+    reason: "Safe web framework"
+  
+  - name: "lodash"
+    version: "*"
+    action: ignore
+    reason: "Safe utility library"
+  
+  - name: "jest"
+    version: "*"
+    action: ignore
+    reason: "Safe testing framework"
+
+ignore:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/coverage/**"
+
