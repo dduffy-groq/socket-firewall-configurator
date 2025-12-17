@@ -1,6 +1,7 @@
-# Socket Firewall Configurator - Caller Workflow
+# Socket Firewall Configurator - Main Workflow (Free Tier)
 #
-# Triggers Socket configuration generation and distribution when policies change.
+# Triggers Socket configuration generation when policies change.
+# No API keys required for basic functionality.
 
 name: Socket Firewall Configurator
 
@@ -10,8 +11,11 @@ on:
       - 'policies/**'
     branches:
       - main
+  pull_request:
+    paths:
+      - 'policies/**'
   schedule:
-    # Run weekly on Mondays at 9:00 UTC to catch expiring rules
+    # Weekly check for policy updates
     - cron: '0 9 * * 1'
   workflow_dispatch:
     inputs:
@@ -20,22 +24,96 @@ on:
         required: false
         type: string
       validate_only:
-        description: 'Only validate policies without distributing'
+        description: 'Only validate policies without generating configs'
         required: false
         default: false
         type: boolean
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
-  configure:
-    name: Generate & Distribute
-    uses: ./.github/workflows/socket-firewall-configurator-reusable.yml
-    with:
-      repository: ${{ inputs.repository || '' }}
-      validate_only: ${{ inputs.validate_only || false }}
-    secrets:
-      ORG_CONFIGURATOR_APP_ID: ${{ secrets.ORG_CONFIGURATOR_APP_ID }}
-      ORG_CONFIGURATOR_APP_PRIVATE_KEY: ${{ secrets.ORG_CONFIGURATOR_APP_PRIVATE_KEY }}
+  validate:
+    name: Validate Policies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Validate all policies
+        run: |
+          python -m socket_firewall_configurator.configurator \
+            --policy-dir policies/ \
+            --validate-only \
+            --verbose
+
+  generate:
+    name: Generate Configurations
+    runs-on: ubuntu-latest
+    needs: validate
+    if: ${{ github.event_name != 'pull_request' && !inputs.validate_only }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Generate socket.yml files
+        run: |
+          ARGS="--policy-dir policies/ --output-dir output/"
+          
+          if [ -n "${{ inputs.repository }}" ]; then
+            ARGS="$ARGS --repo ${{ inputs.repository }}"
+          fi
+          
+          python -m socket_firewall_configurator.configurator $ARGS --verbose
+      
+      - name: Display generated configs
+        run: |
+          echo "=== Generated Configurations ==="
+          for f in output/*/socket.yml; do
+            if [ -f "$f" ]; then
+              REPO=$(dirname "$f" | xargs basename)
+              echo ""
+              echo "--- $REPO/socket.yml ---"
+              cat "$f"
+            fi
+          done
+      
+      - name: Upload configurations
+        uses: actions/upload-artifact@v4
+        with:
+          name: socket-configurations
+          path: output/
+          retention-days: 30
+      
+      - name: Instructions for distribution
+        run: |
+          echo ""
+          echo "=== Distribution Instructions ==="
+          echo ""
+          echo "To apply these configurations to target repositories:"
+          echo ""
+          echo "1. Download the artifact from this workflow run"
+          echo "2. Copy socket.yml to each repository's root"
+          echo "3. Commit and push the changes"
+          echo ""
+          echo "Or use the Socket GitHub App for automatic integration:"
+          echo "https://github.com/apps/socket-security"

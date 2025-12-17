@@ -2,52 +2,55 @@
 
 Centralized configuration management for [Socket](https://socket.dev) dependency security policies across repositories.
 
-Inspired by [dependabot-configurator](https://github.com/redcanaryco/dependabot-configurator), this tool provides a single source of truth for Socket security configurations that can be distributed to all your repositories.
+Inspired by [dependabot-configurator](https://github.com/redcanaryco/dependabot-configurator), this tool provides a single source of truth for Socket security configurations.
+
+## Free Tier Usage
+
+This tool works **without API keys** using Socket's free tier:
+- Policy-based validation via `socket.yml`
+- npm audit integration
+- Manual protestware/malware detection
+- GitHub Actions for CI/CD integration
+
+For full Socket features (real-time scanning, detailed reports), install the [Socket GitHub App](https://github.com/apps/socket-security).
 
 ## What is Socket?
 
-[Socket](https://socket.dev) is a dependency security service that analyzes packages before they're installed, detecting:
+[Socket](https://socket.dev) is a dependency security service that analyzes packages before they're installed:
 - 🔴 **Malware** - Known malicious packages
 - 🟠 **Supply chain attacks** - Typosquats, protestware, compromised packages
 - 🟡 **Vulnerabilities** - CVEs at all severity levels
 - 🔵 **Quality issues** - Unmaintained, deprecated, or risky packages
 
-Socket acts as a "firewall" for your dependencies, checking each package against their cloud service before allowing installation.
-
-## Features
-
-- **Centralized Policies**: Define organization-wide security rules in one place
-- **Per-Repository Overrides**: Customize policies for specific repos
-- **Package Allow/Deny Lists**: Organization-wide banned packages and exceptions
-- **Issue Severity Control**: Configure which issues block vs warn vs ignore
-- **Expiring Exceptions**: Temporary allowances with automatic expiration
-- **GitHub Integration**: Automated workflows to distribute configurations
-
 ## Quick Start
 
 ### 1. Define Organization Defaults
 
-Create `policies/org-defaults.yml` with your baseline security policy:
+Create `policies/org-defaults.yml`:
 
 ```yaml
 name: "Organization Security Policy"
 
 defaultIssueRules:
-  knownMalware: error      # Always block malware
+  knownMalware: error      # Block malware
   criticalCVE: error       # Block critical CVEs
+  protestware: error       # Block protestware
   highCVE: error           # Block high CVEs
   mediumCVE: warn          # Warn on medium CVEs
-  deprecated: warn         # Warn on deprecated packages
+  deprecated: warn         # Warn on deprecated
 
 bannedPackages:
   - name: "event-stream"
     version: "3.3.6"
     reason: "Contained malicious code"
+  - name: "colors"
+    version: ">=1.4.1"
+    reason: "Protestware"
 ```
 
 ### 2. Add Repository-Specific Policies (Optional)
 
-Create `policies/repositories/<repo-name>.yml` for per-repo overrides:
+Create `policies/repositories/<repo-name>.yml`:
 
 ```yaml
 version: 2
@@ -55,13 +58,10 @@ enabled: true
 projectName: "api-gateway"
 
 issueRules:
-  # Stricter for external-facing service
-  mediumCVE: error
-  installScripts: error
+  mediumCVE: error  # Stricter for this repo
 
 deferredPackageRules:
   - name: "express"
-    version: "*"
     action: ignore
     reason: "Core framework"
 ```
@@ -77,15 +77,15 @@ python -m socket_firewall_configurator.configurator \
     --policy-dir policies/ \
     --output-dir output/
 
-# Generate for a specific repo
+# Preview for specific repo
 python -m socket_firewall_configurator.configurator \
     --repo api-gateway \
     --dry-run
 ```
 
-### 4. Distribute to Repositories
+### 4. Apply to Repositories
 
-Copy the generated `socket.yml` files to each repository's root, or use the GitHub workflow for automated distribution.
+Copy the generated `socket.yml` to each repository's root directory.
 
 ## Policy Structure
 
@@ -95,136 +95,64 @@ policies/
 └── repositories/
     ├── api-gateway.yml        # High-security external service
     ├── internal-tool.yml      # Relaxed internal tooling
-    └── ml-pipeline.yml        # ML-specific exceptions
+    └── socket-firewall-test.yml  # Test repo with protestware
 ```
 
-## Configuration Reference
-
-### Issue Types
-
-Socket detects many issue types. Configure how to handle each:
+## Issue Types & Actions
 
 | Issue | Description | Recommended |
 |-------|-------------|-------------|
 | `knownMalware` | Known malicious package | `error` |
+| `protestware` | Protest/sabotage code | `error` |
 | `criticalCVE` | Critical severity CVE | `error` |
 | `highCVE` | High severity CVE | `error` |
-| `protestware` | Protest/sabotage code | `error` |
-| `potentialTyposquat` | Name similar to popular package | `error` |
 | `mediumCVE` | Medium severity CVE | `warn` |
-| `lowCVE` | Low severity CVE | `warn` |
-| `deprecated` | Package marked deprecated | `warn` |
-| `unmaintained` | No recent updates | `warn` |
-| `installScripts` | Has install/postinstall scripts | `warn` |
-| `shellAccess` | Can spawn shell commands | `warn` |
-| `networkAccess` | Has network capabilities | `warn` |
-| `obfuscatedCode` | Contains obfuscated code | `warn` |
-| `nativeCode` | Has native/binary code | `ignore` |
-| `filesystemAccess` | Accesses filesystem | `ignore` |
-| `minifiedCode` | Contains minified code | `ignore` |
+| `deprecated` | Deprecated package | `warn` |
 
 ### Actions
 
 | Action | Effect |
 |--------|--------|
-| `error` | Block the dependency, fail CI |
-| `warn` | Allow but show warning |
+| `error` | Block the dependency |
+| `warn` | Allow with warning |
 | `ignore` | Silently allow |
-| `defer` | Use organization default |
 
-### Package Rules
+## GitHub Workflow Integration
 
-```yaml
-deferredPackageRules:
-  - name: "package-name"
-    version: "*"              # or "1.2.x", ">=1.0.0", etc.
-    action: ignore            # or error, warn
-    reason: "Why this exception exists"
-    expires: "2025-06-01"     # Optional expiration
-```
-
-## GitHub Workflow
-
-Add automated policy distribution to your organization:
+Add to your repository:
 
 ```yaml
-name: Distribute Socket Policies
+name: Socket Security
 
-on:
-  push:
-    paths:
-      - 'policies/**'
-  workflow_dispatch:
+on: [push, pull_request]
 
 jobs:
-  distribute:
-    uses: your-org/socket-firewall-configurator/.github/workflows/socket-firewall-configurator-reusable.yml@main
-    secrets:
-      ORG_CONFIGURATOR_APP_ID: ${{ secrets.ORG_CONFIGURATOR_APP_ID }}
-      ORG_CONFIGURATOR_APP_PRIVATE_KEY: ${{ secrets.ORG_CONFIGURATOR_APP_PRIVATE_KEY }}
+  socket-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Validate socket.yml
+        run: |
+          # Check for blocked packages
+          if grep -q '"colors"' package.json; then
+            echo "❌ Blocked: colors (protestware)"
+            exit 1
+          fi
 ```
-
-## Example Output
-
-Generated `socket.yml` for a repository:
-
-```yaml
-version: 2
-enabled: true
-projectName: api-gateway
-
-issueRules:
-  knownMalware: error
-  criticalCVE: error
-  highCVE: error
-  mediumCVE: error
-  protestware: error
-  installScripts: error
-  shellAccess: error
-
-deferredPackageRules:
-  - name: event-stream
-    version: 3.3.6
-    action: error
-    reason: Contained malicious code targeting Bitcoin wallets
-  - name: express
-    version: "*"
-    action: ignore
-    reason: Core framework for API gateway
-
-ignore:
-  - "**/node_modules/**"
-  - "**/test/**"
-```
-
-## Security Best Practices
-
-1. **Never ignore malware**: Keep `knownMalware: error` in all policies
-2. **Review exceptions**: Regularly audit allowed packages
-3. **Use expiration dates**: Set `expires` on temporary exceptions
-4. **Document reasons**: Always include `reason` for package rules
-5. **Stricter for external**: Use tighter policies for public-facing services
 
 ## Local Development
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Run tests
-pytest tests/ -v
-
-# Validate policies
 python -m socket_firewall_configurator.configurator --validate-only
-
-# Dry run
 python -m socket_firewall_configurator.configurator --dry-run
 ```
 
-## Contributing
+## Test Repository
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [socket-firewall-test](https://github.com/dduffy-groq/socket-firewall-test) for a working example with intentional protestware to test detection.
 
 ## License
 
-BSD-3-Clause. See [LICENSE](LICENSE).
+BSD-3-Clause
