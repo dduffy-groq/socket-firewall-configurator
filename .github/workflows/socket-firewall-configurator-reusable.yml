@@ -1,0 +1,160 @@
+# Socket Firewall Configurator - Reusable Workflow
+#
+# This reusable workflow generates socket.yml configurations from
+# centralized policy definitions and distributes them to repositories.
+
+name: Socket Firewall Configurator (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      repository:
+        description: 'Specific repository to generate config for (optional)'
+        required: false
+        type: string
+      validate_only:
+        description: 'Only validate policies without generating output'
+        required: false
+        default: false
+        type: boolean
+      python_version:
+        description: 'Python version to use'
+        required: false
+        default: '3.11'
+        type: string
+    secrets:
+      ORG_CONFIGURATOR_APP_ID:
+        required: true
+        description: 'GitHub App ID for authentication'
+      ORG_CONFIGURATOR_APP_PRIVATE_KEY:
+        required: true
+        description: 'GitHub App private key'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  generate-config:
+    name: Generate Socket Configuration
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.ORG_CONFIGURATOR_APP_ID }}
+          private-key: ${{ secrets.ORG_CONFIGURATOR_APP_PRIVATE_KEY }}
+      
+      - name: Checkout Configurator Repository
+        uses: actions/checkout@v4
+        with:
+          repository: your-org/socket-firewall-configurator
+          path: configurator
+          token: ${{ steps.app-token.outputs.token }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+          cache: 'pip'
+          cache-dependency-path: configurator/requirements.txt
+      
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r configurator/requirements.txt
+      
+      - name: Validate Policies
+        working-directory: configurator
+        run: |
+          python -m socket_firewall_configurator.configurator \
+            --policy-dir policies/ \
+            --validate-only \
+            --verbose
+      
+      - name: Generate Socket Configurations
+        if: ${{ !inputs.validate_only }}
+        id: generate
+        working-directory: configurator
+        run: |
+          ARGS="--policy-dir policies/ --output-dir output/"
+          
+          if [ -n "${{ inputs.repository }}" ]; then
+            ARGS="$ARGS --repo ${{ inputs.repository }}"
+          fi
+          
+          python -m socket_firewall_configurator.configurator $ARGS --verbose
+          
+          # List generated files
+          echo "Generated configurations:"
+          find output/ -name "socket.yml" -type f
+      
+      - name: Upload Configurations
+        if: ${{ !inputs.validate_only }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: socket-configurations
+          path: configurator/output/
+          retention-days: 7
+      
+      - name: Distribute to Repositories
+        if: ${{ !inputs.validate_only }}
+        working-directory: configurator
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # For each generated config, create a PR in the target repo
+          for repo_dir in output/*/; do
+            repo_name=$(basename "$repo_dir")
+            
+            if [ -f "$repo_dir/socket.yml" ]; then
+              echo "Processing $repo_name..."
+              
+              # Clone target repo
+              gh repo clone "your-org/$repo_name" "target-$repo_name" -- --depth 1 || continue
+              
+              # Copy socket.yml
+              cp "$repo_dir/socket.yml" "target-$repo_name/socket.yml"
+              
+              cd "target-$repo_name"
+              
+              # Check for changes
+              if git diff --quiet; then
+                echo "No changes for $repo_name"
+                cd ..
+                continue
+              fi
+              
+              # Create branch and commit
+              git checkout -b socket-firewall/update-config
+              git add socket.yml
+              git commit -m "chore: update Socket security configuration"
+              git push -u origin socket-firewall/update-config
+              
+              # Create PR
+              gh pr create \
+                --title "🔒 Update Socket Security Configuration" \
+                --body "This PR updates the Socket security configuration based on organization policies.
+
+## Changes
+
+- Updated \`socket.yml\` from centralized policy definitions
+- Applied organization security defaults
+- Included repository-specific overrides (if any)
+
+## Review Checklist
+
+- [ ] Review issue rules match expected security posture
+- [ ] Verify package exceptions are still needed
+- [ ] Check for any expiring rules that need attention
+
+---
+
+*Generated by [Socket Firewall Configurator](https://github.com/your-org/socket-firewall-configurator)*" \
+                --label "security,automation"
+              
+              cd ..
+            fi
+          done

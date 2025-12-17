@@ -1,0 +1,62 @@
+# Socket Policy: ml-pipeline
+#
+# Machine learning pipeline - needs native code and large dependencies.
+# Custom rules for ML/AI package ecosystem.
+
+version: 2
+enabled: true
+projectName: "ml-pipeline"
+
+# ML-specific issue rules
+issueRules:
+  # Keep all critical protections
+  knownMalware: error
+  criticalCVE: error
+  protestware: error
+  highCVE: error
+  
+  # ML packages often trigger these - adjust accordingly
+  nativeCode: ignore          # ML libs have native extensions
+  filesystemAccess: ignore    # Model loading/saving
+  networkAccess: warn         # Model downloads - monitor but allow
+  
+  # Large ML packages are often "unpopular" by download count
+  unpopularPackage: ignore
+  
+  # Some ML packages are minified
+  minifiedCode: ignore
+
+# ML ecosystem package rules
+deferredPackageRules:
+  # Core ML frameworks
+  - name: "tensorflow"
+    version: "*"
+    action: ignore
+    reason: "Core ML framework"
+  
+  - name: "@tensorflow/tfjs"
+    version: "*"
+    action: ignore
+    reason: "TensorFlow.js for inference"
+  
+  - name: "onnxruntime-node"
+    version: "*"
+    action: ignore
+    reason: "ONNX runtime for model inference"
+  
+  - name: "sharp"
+    version: "*"
+    action: ignore
+    reason: "Image processing - has native code"
+  
+  # Python interop
+  - name: "python-shell"
+    version: "*"
+    action: warn
+    reason: "Python interop - needs shell access"
+
+ignore:
+  - "**/models/**"
+  - "**/datasets/**"
+  - "**/checkpoints/**"
+

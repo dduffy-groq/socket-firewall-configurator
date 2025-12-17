@@ -1,0 +1,52 @@
+# Socket Policy: api-gateway
+#
+# API Gateway service - external-facing, requires strict security.
+# Inherits from org-defaults with additional restrictions.
+
+version: 2
+enabled: true
+projectName: "api-gateway"
+
+# Override issue rules for this high-security service
+issueRules:
+  # Stricter than org defaults for external-facing service
+  mediumCVE: error           # Block medium CVEs (org default: warn)
+  installScripts: error      # Block install scripts
+  shellAccess: error         # No shell access allowed
+  networkAccess: warn        # Expected for API gateway
+  
+  # Keep org defaults for these
+  knownMalware: error
+  criticalCVE: error
+  highCVE: error
+
+# Package-specific rules for this repository
+deferredPackageRules:
+  # Allow specific packages needed for this service
+  - name: "express"
+    version: "*"
+    action: ignore
+    reason: "Core framework for API gateway"
+  
+  - name: "helmet"
+    version: "*"
+    action: ignore
+    reason: "Security middleware - required"
+  
+  - name: "@grpc/grpc-js"
+    version: "*"
+    action: ignore
+    reason: "Required for internal service communication"
+  
+  # Temporary exception with expiration
+  - name: "some-legacy-package"
+    version: "1.2.x"
+    action: warn
+    reason: "Legacy dependency - scheduled for removal"
+    expires: "2025-03-01"
+
+# Paths to ignore (in addition to org defaults)
+ignore:
+  - "**/docs/**"
+  - "**/scripts/dev/**"
+

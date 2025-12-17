@@ -1,0 +1,106 @@
+# Organization-Wide Socket Security Defaults
+#
+# These settings apply to ALL repositories unless overridden.
+# They define the baseline security posture for dependency management.
+
+name: "Organization Security Policy"
+description: "Default Socket security settings for all repositories"
+
+# Default issue rules - what action to take for each issue type
+# Actions: error (block), warn (allow with warning), ignore (silently allow), defer
+defaultIssueRules:
+  # ============================================
+  # CRITICAL - Always Block
+  # ============================================
+  knownMalware: error        # Known malicious packages
+  criticalCVE: error         # Critical severity CVEs
+  protestware: error         # Packages with protest/malicious code
+
+  # ============================================
+  # HIGH RISK - Block by Default
+  # ============================================
+  highCVE: error             # High severity CVEs
+  potentialTyposquat: error  # Packages that look like typosquats
+  highEntropyStrings: warn   # Suspicious obfuscated strings
+  
+  # ============================================
+  # MEDIUM RISK - Warn
+  # ============================================
+  mediumCVE: warn            # Medium severity CVEs
+  installScripts: warn       # Packages with install scripts
+  obfuscatedCode: warn       # Obfuscated/encoded code
+  shellAccess: warn          # Packages that spawn shells
+  networkAccess: warn        # Packages with network capabilities
+  
+  # ============================================
+  # LOW RISK - Warn (can be ignored per-repo)
+  # ============================================
+  lowCVE: warn               # Low severity CVEs
+  deprecated: warn           # Deprecated packages
+  unmaintained: warn         # Packages not updated recently
+  unstableOwnership: warn    # Recent ownership changes
+  newAuthor: warn            # New/unknown package authors
+
+  # ============================================
+  # INFORMATIONAL - Ignore by Default
+  # ============================================
+  noLicense: warn            # No license file
+  copyleftLicense: ignore    # Copyleft licenses (GPL, etc)
+  nonOssLicense: warn        # Non-OSS licenses
+  filesystemAccess: ignore   # File system access (common)
+  environmentAccess: ignore  # Env var access (common)
+  nativeCode: ignore         # Native bindings (common)
+  minifiedCode: ignore       # Minified code (common in JS)
+  trivialPackage: ignore     # Very small packages
+  floatingDependency: ignore # Unpinned dependencies
+  unpopularPackage: ignore   # Low download count
+
+# Organization-wide banned packages
+# These packages are NEVER allowed in any repository
+bannedPackages:
+  - name: "event-stream"
+    version: "3.3.6"
+    reason: "Contained malicious code targeting Bitcoin wallets"
+  
+  - name: "flatmap-stream"
+    version: "*"
+    reason: "Malicious package injected into event-stream"
+  
+  - name: "colors"
+    version: ">=1.4.1"
+    reason: "Protestware - intentionally corrupted in these versions"
+  
+  - name: "faker"
+    version: ">=6.6.6"
+    reason: "Protestware - intentionally corrupted in these versions"
+  
+  - name: "node-ipc"
+    version: ">=10.1.1 <10.1.3"
+    reason: "Protestware - contained anti-Russia malware"
+  
+  - name: "ua-parser-js"
+    version: "0.7.29"
+    reason: "Compromised version with crypto miner"
+
+# Organization-wide allowed packages (exceptions to warnings)
+# Use sparingly - only for well-known false positives
+allowedPackages:
+  - name: "lodash"
+    version: "*"
+    reason: "Widely used utility library, acceptable risk"
+  
+  - name: "debug"
+    version: "*"
+    reason: "Standard debugging library, network access is expected"
+
+# Default paths to ignore in all repositories
+defaultIgnorePaths:
+  - "**/node_modules/**"
+  - "**/vendor/**"
+  - "**/.git/**"
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/__tests__/**"
+  - "**/fixtures/**"
+  - "**/examples/**"
+

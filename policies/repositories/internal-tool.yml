@@ -1,0 +1,53 @@
+# Socket Policy: internal-tool
+#
+# Internal developer tooling - more relaxed security posture.
+# Still inherits critical protections from org-defaults.
+
+version: 2
+enabled: true
+projectName: "internal-tool"
+
+# More permissive issue rules for internal tooling
+issueRules:
+  # Keep critical protections
+  knownMalware: error
+  criticalCVE: error
+  protestware: error
+  
+  # Relax medium/low issues for dev tooling
+  mediumCVE: warn
+  lowCVE: ignore
+  deprecated: ignore          # OK for internal tools
+  unmaintained: warn          # Just warn
+  installScripts: warn        # Dev tools often need these
+  shellAccess: ignore         # Dev tools may spawn shells
+  
+  # Informational only
+  trivialPackage: ignore
+  floatingDependency: ignore
+  unpopularPackage: ignore
+
+# Package-specific rules
+deferredPackageRules:
+  # Allow dev-focused packages
+  - name: "nodemon"
+    version: "*"
+    action: ignore
+    reason: "Development file watcher"
+  
+  - name: "prettier"
+    version: "*"
+    action: ignore
+    reason: "Code formatting tool"
+  
+  - name: "eslint"
+    version: "*"
+    action: ignore
+    reason: "Linting tool"
+
+# More paths ignored for internal tool
+ignore:
+  - "**/playground/**"
+  - "**/sandbox/**"
+  - "**/scratch/**"
+

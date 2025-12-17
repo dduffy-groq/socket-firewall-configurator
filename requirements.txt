@@ -1,0 +1,14 @@
+# Socket Firewall Configurator Dependencies
+
+# YAML parsing
+PyYAML>=6.0.1
+
+# CLI enhancements
+rich>=13.7.0
+
+# HTTP requests for API interactions
+requests>=2.31.0
+
+# JSON schema validation
+jsonschema>=4.20.0
+

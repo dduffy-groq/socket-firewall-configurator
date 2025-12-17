@@ -1,0 +1,41 @@
+# Socket Firewall Configurator - Caller Workflow
+#
+# Triggers Socket configuration generation and distribution when policies change.
+
+name: Socket Firewall Configurator
+
+on:
+  push:
+    paths:
+      - 'policies/**'
+    branches:
+      - main
+  schedule:
+    # Run weekly on Mondays at 9:00 UTC to catch expiring rules
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: 'Specific repository to update (leave empty for all)'
+        required: false
+        type: string
+      validate_only:
+        description: 'Only validate policies without distributing'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  configure:
+    name: Generate & Distribute
+    uses: ./.github/workflows/socket-firewall-configurator-reusable.yml
+    with:
+      repository: ${{ inputs.repository || '' }}
+      validate_only: ${{ inputs.validate_only || false }}
+    secrets:
+      ORG_CONFIGURATOR_APP_ID: ${{ secrets.ORG_CONFIGURATOR_APP_ID }}
+      ORG_CONFIGURATOR_APP_PRIVATE_KEY: ${{ secrets.ORG_CONFIGURATOR_APP_PRIVATE_KEY }}
